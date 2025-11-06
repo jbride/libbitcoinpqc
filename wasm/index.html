@@ -1,0 +1,810 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bitcoin PQC</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1000px;
+            margin: 50px auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+
+        h1 {
+            color: #333;
+            border-bottom: 2px solid #4CAF50;
+            padding-bottom: 10px;
+        }
+
+        h2 {
+            color: #666;
+            margin-top: 30px;
+            border-bottom: 1px solid #ddd;
+            padding-bottom: 5px;
+        }
+
+        button {
+            background-color: #4CAF50;
+            color: white;
+            padding: 12px 24px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+            margin: 10px 5px;
+        }
+
+        button:hover {
+            background-color: #45a049;
+        }
+
+        button:disabled {
+            background-color: #cccccc;
+            cursor: not-allowed;
+        }
+
+        button.secondary {
+            background-color: #2196F3;
+        }
+
+        button.secondary:hover {
+            background-color: #1976D2;
+        }
+
+        .output {
+            background-color: #f9f9f9;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            padding: 15px;
+            margin-top: 20px;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            max-height: 600px;
+            overflow-y: auto;
+        }
+
+        .status {
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 4px;
+        }
+
+        .status.loading {
+            background-color: #fff3cd;
+            border: 1px solid #ffc107;
+            color: #856404;
+        }
+
+        .status.success {
+            background-color: #d4edda;
+            border: 1px solid #28a745;
+            color: #155724;
+        }
+
+        .status.error {
+            background-color: #f8d7da;
+            border: 1px solid #dc3545;
+            color: #721c24;
+        }
+
+        .section {
+            margin: 20px 0;
+            padding: 15px;
+            background-color: #f9f9f9;
+            border-left: 4px solid #2196F3;
+        }
+
+        .module-selector {
+            margin: 20px 0;
+            padding: 15px;
+            background-color: #e3f2fd;
+            border-left: 4px solid #2196F3;
+            border-radius: 4px;
+        }
+
+        .module-selector label {
+            display: block;
+            margin: 10px 0;
+            font-weight: bold;
+            color: #333;
+        }
+
+        .module-selector input[type="radio"] {
+            margin-right: 8px;
+            margin-left: 0;
+        }
+
+        .module-selector .radio-group {
+            margin: 10px 0;
+        }
+
+        .module-selector .radio-group label {
+            display: inline-block;
+            font-weight: normal;
+            margin-left: 5px;
+            cursor: pointer;
+        }
+
+        .module-selector .description {
+            font-size: 12px;
+            color: #666;
+            margin-left: 25px;
+            margin-top: 5px;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <h1>🔐 Bitcoin PQC Library Example</h1>
+
+        <div class="module-selector">
+            <label>Select Module Type:</label>
+            <div class="radio-group">
+                <input type="radio" id="moduleLowLevel" name="moduleType" value="lowlevel" checked>
+                <label for="moduleLowLevel">Low-Level API (bitcoinpqc.js)</label>
+                <div class="description">Direct Emscripten module - manual memory management</div>
+            </div>
+            <div class="radio-group">
+                <input type="radio" id="moduleHighLevel" name="moduleType" value="highlevel">
+                <label for="moduleHighLevel">High-Level API (index.js)</label>
+                <div class="description">TypeScript wrapper - automatic memory management</div>
+            </div>
+            <button id="loadModule" onclick="loadSelectedModule()">Load Module</button>
+        </div>
+
+        <div id="status" class="status loading">
+            Select a module type and click "Load Module" to begin...
+        </div>
+
+        <div class="section">
+            <h2>Run Full Tests</h2>
+            <p>This example tests the post-quantum signature algorithms designed for BIP-360 / P2TSH.
+                fork.</p>
+            <button id="testMlDsa" onclick="testAlgorithm(1, 'ML-DSA-44')" disabled>
+                Test ML-DSA-44
+            </button>
+            <button id="testSlhDsa" onclick="testAlgorithm(2, 'SLH-DSA-Shake-128s')" disabled>
+                Test SLH-DSA-Shake-128s
+            </button>
+            <button id="testAll" onclick="testAllAlgorithms()" disabled class="secondary">
+                Test All Algorithms
+            </button>
+        </div>
+
+        <div id="output" class="output">
+            Waiting for module to load...
+        </div>
+    </div>
+
+    <script>
+        let wasmLoaded = false;
+        let moduleType = 'lowlevel'; // 'lowlevel' or 'highlevel'
+        let highLevelModule = null; // For high-level API
+        let AlgorithmEnum = null; // For high-level API Algorithm enum
+
+        // Load the selected module
+        async function loadSelectedModule() {
+            const selected = document.querySelector('input[name="moduleType"]:checked').value;
+            moduleType = selected;
+            wasmLoaded = false;
+            highLevelModule = null;
+            AlgorithmEnum = null; // Reset AlgorithmEnum
+
+            const statusDiv = document.getElementById('status');
+            const loadButton = document.getElementById('loadModule');
+            const output = document.getElementById('output');
+
+            // Disable buttons
+            document.getElementById('testMlDsa').disabled = true;
+            document.getElementById('testSlhDsa').disabled = true;
+            document.getElementById('testAll').disabled = true;
+            loadButton.disabled = true;
+
+            statusDiv.className = 'status loading';
+            statusDiv.textContent = 'Loading WebAssembly module...';
+            output.textContent = 'Loading module...';
+
+            try {
+                if (moduleType === 'lowlevel') {
+                    await loadLowLevelModule();
+                } else {
+                    await loadHighLevelModule();
+                }
+
+                wasmLoaded = true;
+                statusDiv.className = 'status success';
+                statusDiv.textContent = '✅ WebAssembly module loaded successfully!';
+                output.textContent = 'Module loaded. Ready to run tests. Click a button above.';
+
+                document.getElementById('testMlDsa').disabled = false;
+                document.getElementById('testSlhDsa').disabled = false;
+                document.getElementById('testAll').disabled = false;
+            } catch (error) {
+                statusDiv.className = 'status error';
+                let errorText = '❌ Failed to load WASM module: ' + error.message;
+                if (error.message.includes('Illegal invocation')) {
+                    errorText += '\n💡 This may indicate a browser compatibility issue with crypto.getRandomValues.';
+                }
+                statusDiv.textContent = errorText;
+                output.textContent = 'Error: ' + error.message;
+                console.error('Module loading error:', error);
+            } finally {
+                loadButton.disabled = false;
+            }
+        }
+
+        // Load low-level module (bitcoinpqc.js)
+        async function loadLowLevelModule() {
+            return new Promise((resolve, reject) => {
+                // Remove existing script if present
+                const existingScript = document.getElementById('bitcoinpqc-script');
+                if (existingScript) {
+                    existingScript.remove();
+                }
+
+                // Create and load script
+                const script = document.createElement('script');
+                script.id = 'bitcoinpqc-script';
+                script.src = './dist/bitcoinpqc.js';
+
+                let moduleInitialized = false;
+
+                const moduleConfig = {
+                    onRuntimeInitialized: function () {
+                        // This callback is called during initialization
+                        // The module is ready when the Promise resolves
+                        if (!moduleInitialized) {
+                            moduleInitialized = true;
+                        }
+                    },
+                    print: function (text) {
+                        console.log('WASM:', text);
+                    },
+                    printErr: function (text) {
+                        console.error('WASM Error:', text);
+                        if (!moduleInitialized) {
+                            reject(new Error(text));
+                        }
+                    }
+                };
+
+                script.onload = async function () {
+                    if (typeof Module === 'function') {
+                        try {
+                            // Module() returns a Promise that resolves to the module instance
+                            const moduleInstance = await Module(moduleConfig);
+                            // Set window.Module to the resolved instance
+                            window.Module = moduleInstance;
+                            window.ModuleInstance = moduleInstance;
+                            resolve();
+                        } catch (error) {
+                            reject(error);
+                        }
+                    } else {
+                        reject(new Error('Module factory function not found'));
+                    }
+                };
+
+                script.onerror = function () {
+                    reject(new Error('Failed to load bitcoinpqc.js'));
+                };
+
+                document.head.appendChild(script);
+            });
+        }
+
+        // Load high-level module (index.js)
+        async function loadHighLevelModule() {
+            return new Promise((resolve, reject) => {
+                // Remove existing scripts if present
+                const existingScript = document.getElementById('highlevel-module-script');
+                const existingBitcoinpqc = document.getElementById('bitcoinpqc-script-loader');
+                if (existingScript) existingScript.remove();
+                if (existingBitcoinpqc) existingBitcoinpqc.remove();
+
+                // First, load bitcoinpqc.js as a script tag to make Module available globally
+                const bitcoinpqcScript = document.createElement('script');
+                bitcoinpqcScript.id = 'bitcoinpqc-script-loader';
+                bitcoinpqcScript.src = './dist/bitcoinpqc.js';
+
+                bitcoinpqcScript.onload = () => {
+                    // Wait a bit to ensure Module is set on window/globalThis
+                    // Emscripten code sets it, but we need to make sure it's available
+                    const checkModule = () => {
+                        const globalModule = (typeof globalThis !== 'undefined' && globalThis.Module) ||
+                            (typeof window !== 'undefined' && window.Module);
+
+                        if (globalModule) {
+                            // Ensure it's available for index.js to find
+                            if (typeof globalThis !== 'undefined') {
+                                globalThis.Module = globalModule;
+                            }
+                            if (typeof window !== 'undefined') {
+                                window.Module = globalModule;
+                            }
+
+                            // Now that bitcoinpqc.js is loaded and Module is available, create the module script for index.js
+                            const script = document.createElement('script');
+                            script.id = 'highlevel-module-script';
+                            script.type = 'module';
+
+                            // Create a script that imports and exposes the module globally
+                            script.textContent = `
+                                import * as bitcoinpqcModule from './dist/index.js';
+                                
+                                // Expose to global scope for access from regular scripts
+                                window.__bitcoinpqcHighLevel = bitcoinpqcModule.bitcoinpqc || bitcoinpqcModule.default;
+                                window.__bitcoinpqcAlgorithm = bitcoinpqcModule.Algorithm;
+                                
+                                // Initialize the module
+                                const bitcoinpqc = window.__bitcoinpqcHighLevel;
+                                bitcoinpqc.init({
+                                    onRuntimeInitialized: () => {
+                                        console.log('High-level module initialized');
+                                        window.__bitcoinpqcReady = true;
+                                        window.dispatchEvent(new CustomEvent('bitcoinpqc-ready'));
+                                    },
+                                    print: (text) => console.log('WASM:', text),
+                                    printErr: (text) => console.error('WASM Error:', text)
+                                }).then(() => {
+                                    // Already handled in onRuntimeInitialized
+                                }).catch(err => {
+                                    window.__bitcoinpqcError = err;
+                                    window.dispatchEvent(new CustomEvent('bitcoinpqc-error', { detail: err }));
+                                });
+                            `;
+
+                            // Listen for the ready event
+                            const readyHandler = () => {
+                                window.removeEventListener('bitcoinpqc-ready', readyHandler);
+                                window.removeEventListener('bitcoinpqc-error', errorHandler);
+                                highLevelModule = window.__bitcoinpqcHighLevel;
+                                AlgorithmEnum = window.__bitcoinpqcAlgorithm;
+                                if (!highLevelModule || !AlgorithmEnum) {
+                                    reject(new Error('Failed to get high-level module or Algorithm enum'));
+                                    return;
+                                }
+                                resolve();
+                            };
+
+                            const errorHandler = (event) => {
+                                window.removeEventListener('bitcoinpqc-ready', readyHandler);
+                                window.removeEventListener('bitcoinpqc-error', errorHandler);
+                                const error = event.detail || new Error('Failed to initialize high-level module');
+                                reject(error);
+                            };
+
+                            window.addEventListener('bitcoinpqc-ready', readyHandler);
+                            window.addEventListener('bitcoinpqc-error', errorHandler);
+
+                            // Add module script to document
+                            document.head.appendChild(script);
+
+                            // Timeout fallback
+                            setTimeout(() => {
+                                if (!window.__bitcoinpqcReady && !window.__bitcoinpqcError) {
+                                    window.removeEventListener('bitcoinpqc-ready', readyHandler);
+                                    window.removeEventListener('bitcoinpqc-error', errorHandler);
+                                    reject(new Error('High-level module loading timeout (30s)'));
+                                }
+                            }, 30000);
+                        } else {
+                            // Retry after a short delay
+                            setTimeout(checkModule, 50);
+                        }
+                    };
+
+                    // Start checking for Module
+                    checkModule();
+                };
+
+                bitcoinpqcScript.onerror = () => {
+                    reject(new Error('Failed to load bitcoinpqc.js'));
+                };
+
+                // Load bitcoinpqc.js first
+                document.head.appendChild(bitcoinpqcScript);
+            });
+        }
+
+        // Helper function to convert Uint8Array to hex string
+        function arrayToHex(arr) {
+            return Array.from(arr)
+                .map(b => b.toString(16).padStart(2, '0'))
+                .join('');
+        }
+
+        // Generate random bytes
+        function generateRandomBytes(length) {
+            const array = new Uint8Array(length);
+            crypto.getRandomValues(array);
+            return array;
+        }
+
+        // Read a 32-bit integer from WASM memory (little-endian) - for low-level API
+        function readUint32(ptr) {
+            if (window.Module.HEAP32) {
+                return (window.Module.HEAP32[ptr >> 2] >>> 0);
+            }
+            const heap = window.Module.HEAP8;
+            return (heap[ptr] | (heap[ptr + 1] << 8) | (heap[ptr + 2] << 16) | (heap[ptr + 3] << 24)) >>> 0;
+        }
+
+        // Read a pointer from WASM memory (32-bit in WASM) - for low-level API
+        function readPointer(ptr) {
+            return readUint32(ptr);
+        }
+
+        // Get key sizes from C API - for low-level API
+        function getKeySizes(algorithm) {
+            const pkSize = window.Module.ccall(
+                'bitcoin_pqc_public_key_size',
+                'number',
+                ['number'],
+                [algorithm]
+            );
+            const skSize = window.Module.ccall(
+                'bitcoin_pqc_secret_key_size',
+                'number',
+                ['number'],
+                [algorithm]
+            );
+            const sigSize = window.Module.ccall(
+                'bitcoin_pqc_signature_size',
+                'number',
+                ['number'],
+                [algorithm]
+            );
+            return { pkSize, skSize, sigSize };
+        }
+
+        // Generate keypair - low-level API
+        function generateKeypairLowLevel(algorithm, randomData) {
+            const randomPtr = window.Module._malloc(randomData.length);
+            window.Module.HEAP8.set(randomData, randomPtr);
+
+            const keypairPtr = window.Module._malloc(32);
+
+            const result = window.Module.ccall(
+                'bitcoin_pqc_keygen',
+                'number',
+                ['number', 'number', 'number', 'number'],
+                [algorithm, keypairPtr, randomPtr, randomData.length]
+            );
+
+            window.Module._free(randomPtr);
+
+            if (result !== 0) {
+                window.Module._free(keypairPtr);
+                let errorMsg;
+                switch (result) {
+                    case -1:
+                        errorMsg = 'BAD_ARG: Invalid algorithm or insufficient random data';
+                        break;
+                    case -4:
+                        errorMsg = 'NOT_IMPLEMENTED: Algorithm not supported';
+                        break;
+                    default:
+                        errorMsg = `UNKNOWN_ERROR(${result})`;
+                }
+                throw new Error(`Key generation failed: ${errorMsg}`);
+            }
+
+            const algorithmFromStruct = readUint32(keypairPtr);
+            const publicKeyPtr = readPointer(keypairPtr + 4);
+            const secretKeyPtr = readPointer(keypairPtr + 8);
+            const publicKeySize = readUint32(keypairPtr + 12);
+            const secretKeySize = readUint32(keypairPtr + 16);
+
+            const heapSize = window.Module.HEAP8.length;
+            if (publicKeyPtr === 0 || publicKeyPtr >= heapSize || secretKeyPtr === 0 || secretKeyPtr >= heapSize) {
+                window.Module._free(keypairPtr);
+                throw new Error(`Invalid key pointers`);
+            }
+
+            if (publicKeySize === 0 || secretKeySize === 0) {
+                window.Module._free(keypairPtr);
+                throw new Error('Key generation returned invalid key sizes');
+            }
+
+            const publicKey = window.Module.HEAP8.subarray(publicKeyPtr, publicKeyPtr + publicKeySize);
+            const secretKey = window.Module.HEAP8.subarray(secretKeyPtr, secretKeyPtr + secretKeySize);
+
+            const publicKeyCopy = new Uint8Array(publicKey);
+            const secretKeyCopy = new Uint8Array(secretKey);
+
+            return {
+                keypairPtr,
+                publicKey: publicKeyCopy,
+                secretKey: secretKeyCopy,
+                publicKeySize,
+                secretKeySize
+            };
+        }
+
+        // Generate keypair - high-level API
+        function generateKeypairHighLevel(algorithm, randomData) {
+            // Convert algorithm number to enum
+            const algo = algorithm === 1 ? AlgorithmEnum.ML_DSA_44 : AlgorithmEnum.SLH_DSA_SHAKE_128S;
+            return highLevelModule.generateKeypair(algo, randomData);
+        }
+
+        // Sign a message - low-level API
+        function signMessageLowLevel(algorithm, secretKey, message) {
+            if (!secretKey || secretKey.length === 0) {
+                throw new Error('Invalid secret key: empty or null');
+            }
+
+            const expectedSkSize = getKeySizes(algorithm).skSize;
+            if (secretKey.length !== expectedSkSize) {
+                throw new Error(`Secret key size mismatch: expected ${expectedSkSize}, got ${secretKey.length}`);
+            }
+
+            const secretKeyPtr = window.Module._malloc(secretKey.length);
+            window.Module.HEAP8.set(secretKey, secretKeyPtr);
+
+            const messagePtr = window.Module._malloc(message.length);
+            window.Module.HEAP8.set(message, messagePtr);
+
+            const signaturePtr = window.Module._malloc(16);
+            window.Module.HEAP8.fill(0, signaturePtr, signaturePtr + 16);
+
+            if (window.Module.HEAP32) {
+                window.Module.HEAP32[signaturePtr >> 2] = algorithm;
+            } else {
+                window.Module.HEAP8[signaturePtr] = algorithm & 0xFF;
+                window.Module.HEAP8[signaturePtr + 1] = (algorithm >> 8) & 0xFF;
+                window.Module.HEAP8[signaturePtr + 2] = (algorithm >> 16) & 0xFF;
+                window.Module.HEAP8[signaturePtr + 3] = (algorithm >> 24) & 0xFF;
+            }
+
+            let result;
+            try {
+                result = window.Module.ccall(
+                    'bitcoin_pqc_sign',
+                    'number',
+                    ['number', 'number', 'number', 'number', 'number', 'number'],
+                    [algorithm, secretKeyPtr, secretKey.length, messagePtr, message.length, signaturePtr]
+                );
+            } catch (error) {
+                window.Module._free(secretKeyPtr);
+                window.Module._free(messagePtr);
+                window.Module._free(signaturePtr);
+                throw error;
+            }
+
+            window.Module._free(secretKeyPtr);
+            window.Module._free(messagePtr);
+
+            if (result !== 0) {
+                window.Module._free(signaturePtr);
+                let errorMsg;
+                switch (result) {
+                    case -1:
+                        errorMsg = 'BAD_ARG: Invalid algorithm or input parameters';
+                        break;
+                    case -2:
+                        errorMsg = 'BAD_KEY: Invalid or corrupted secret key';
+                        break;
+                    case -3:
+                        errorMsg = 'BAD_SIGNATURE: Signature generation failed';
+                        break;
+                    case -4:
+                        errorMsg = 'NOT_IMPLEMENTED: Algorithm not supported';
+                        break;
+                    default:
+                        errorMsg = `UNKNOWN_ERROR(${result})`;
+                }
+                throw new Error(`Signing failed: ${errorMsg}`);
+            }
+
+            const signatureDataPtr = readPointer(signaturePtr + 4);
+            const signatureSize = readUint32(signaturePtr + 8);
+            const signature = window.Module.HEAP8.subarray(signatureDataPtr, signatureDataPtr + signatureSize);
+            const signatureCopy = new Uint8Array(signature);
+
+            return {
+                signaturePtr,
+                signature: signatureCopy,
+                signatureSize
+            };
+        }
+
+        // Sign a message - high-level API
+        function signMessageHighLevel(algorithm, secretKey, message) {
+            const algo = algorithm === 1 ? AlgorithmEnum.ML_DSA_44 : AlgorithmEnum.SLH_DSA_SHAKE_128S;
+            return highLevelModule.sign(secretKey, message, algo);
+        }
+
+        // Verify a signature - low-level API
+        function verifySignatureLowLevel(algorithm, publicKey, message, signature) {
+            const publicKeyPtr = window.Module._malloc(publicKey.length);
+            window.Module.HEAP8.set(publicKey, publicKeyPtr);
+
+            const messagePtr = window.Module._malloc(message.length);
+            window.Module.HEAP8.set(message, messagePtr);
+
+            const signaturePtr = window.Module._malloc(signature.length);
+            window.Module.HEAP8.set(signature, signaturePtr);
+
+            const result = window.Module.ccall(
+                'bitcoin_pqc_verify',
+                'number',
+                ['number', 'number', 'number', 'number', 'number', 'number', 'number'],
+                [algorithm, publicKeyPtr, publicKey.length, messagePtr, message.length, signaturePtr, signature.length]
+            );
+
+            window.Module._free(publicKeyPtr);
+            window.Module._free(messagePtr);
+            window.Module._free(signaturePtr);
+
+            return result === 0;
+        }
+
+        // Verify a signature - high-level API
+        function verifySignatureHighLevel(algorithm, publicKey, message, signature) {
+            const algo = algorithm === 1 ? AlgorithmEnum.ML_DSA_44 : AlgorithmEnum.SLH_DSA_SHAKE_128S;
+
+            // High-level API expects signature object with bytes property
+            const sigObj = signature.bytes ? signature : { bytes: signature };
+            return highLevelModule.verify(publicKey, message, sigObj, algo);
+        }
+
+        // Test algorithm (works with both APIs)
+        window.testAlgorithm = async function testAlgorithm(algorithm, name) {
+            if (!wasmLoaded) {
+                alert('WASM module not loaded yet! Please select a module and click "Load Module".');
+                return;
+            }
+
+            const output = document.getElementById('output');
+            let log = '';
+            const logLine = (msg) => {
+                log += msg + '\n';
+                output.textContent = log;
+            };
+
+            try {
+                logLine(`Testing ${name} algorithm (${moduleType === 'lowlevel' ? 'Low-Level API' : 'High-Level API'}):`);
+                logLine('------------------------');
+
+                let pkSize, skSize, sigSize;
+                if (moduleType === 'lowlevel') {
+                    const sizes = getKeySizes(algorithm);
+                    pkSize = sizes.pkSize;
+                    skSize = sizes.skSize;
+                    sigSize = sizes.sigSize;
+                } else {
+                    // Use Algorithm enum directly
+                    const algo = algorithm === 1 ? AlgorithmEnum.ML_DSA_44 : AlgorithmEnum.SLH_DSA_SHAKE_128S;
+                    pkSize = highLevelModule.publicKeySize(algo);
+                    skSize = highLevelModule.secretKeySize(algo);
+                    sigSize = highLevelModule.signatureSize(algo);
+                }
+
+                logLine(`Public key size: ${pkSize} bytes`);
+                logLine(`Secret key size: ${skSize} bytes`);
+                logLine(`Signature size: ${sigSize} bytes`);
+
+                const randomData = generateRandomBytes(128);
+
+                // Generate a key pair
+                const keygenStart = performance.now();
+                let keypair;
+                if (moduleType === 'lowlevel') {
+                    keypair = generateKeypairLowLevel(algorithm, randomData);
+                } else {
+                    keypair = generateKeypairHighLevel(algorithm, randomData);
+                }
+                const keygenDuration = performance.now() - keygenStart;
+                logLine(`Key generation time: ${keygenDuration.toFixed(2)} ms`);
+
+                // Create a message to sign
+                const messageText = 'This is a test message for PQC signature verification';
+                const message = new TextEncoder().encode(messageText);
+                logLine(`Message to sign: "${messageText}"`);
+                logLine(`Message length: ${message.length} bytes`);
+
+                // Sign the message
+                const signStart = performance.now();
+                let signatureData;
+                try {
+                    if (moduleType === 'lowlevel') {
+                        signatureData = signMessageLowLevel(algorithm, keypair.secretKey, message);
+                    } else {
+                        signatureData = signMessageHighLevel(algorithm, keypair.secretKey, message);
+                    }
+                    const signDuration = performance.now() - signStart;
+                    logLine(`Signing time: ${signDuration.toFixed(2)} ms`);
+                    const actualSigSize = signatureData.signatureSize || signatureData.size || signatureData.bytes?.length;
+                    logLine(`Actual signature size: ${actualSigSize} bytes`);
+                } catch (error) {
+                    const signDuration = performance.now() - signStart;
+                    logLine(`Signing failed after ${signDuration.toFixed(2)} ms`);
+                    logLine(`Error: ${error.message}`);
+                    throw error;
+                }
+
+                // Verify the signature
+                const verifyStart = performance.now();
+                let verifyResult;
+                const sigBytes = signatureData.signature || signatureData.bytes;
+                if (moduleType === 'lowlevel') {
+                    verifyResult = verifySignatureLowLevel(algorithm, keypair.publicKey, message, sigBytes);
+                } else {
+                    verifyResult = verifySignatureHighLevel(algorithm, keypair.publicKey, message, signatureData);
+                }
+                const verifyDuration = performance.now() - verifyStart;
+
+                if (verifyResult) {
+                    logLine('Signature verified successfully!');
+                } else {
+                    logLine('ERROR: Signature verification failed!');
+                }
+                logLine(`Verification time: ${verifyDuration.toFixed(2)} ms`);
+
+                // Try to verify with a modified message
+                const modifiedMessageText = 'This is a MODIFIED message for PQC signature verification';
+                const modifiedMessage = new TextEncoder().encode(modifiedMessageText);
+                logLine(`Modified message: "${modifiedMessageText}"`);
+                let modifiedVerifyResult;
+                if (moduleType === 'lowlevel') {
+                    modifiedVerifyResult = verifySignatureLowLevel(algorithm, keypair.publicKey, modifiedMessage, sigBytes);
+                } else {
+                    modifiedVerifyResult = verifySignatureHighLevel(algorithm, keypair.publicKey, modifiedMessage, signatureData);
+                }
+
+                if (modifiedVerifyResult) {
+                    logLine('ERROR: Signature verified for modified message!');
+                } else {
+                    logLine('Correctly rejected signature for modified message');
+                }
+
+                // Clean up (only for low-level API)
+                if (moduleType === 'lowlevel') {
+                    window.Module.ccall('bitcoin_pqc_keypair_free', null, ['number'], [keypair.keypairPtr]);
+                    window.Module.ccall('bitcoin_pqc_signature_free', null, ['number'], [signatureData.signaturePtr]);
+                }
+
+                logLine('');
+
+            } catch (error) {
+                logLine(`❌ Error testing ${name}: ${error.message}`);
+                console.error('Error testing algorithm:', error);
+            }
+        }
+
+        // Test all algorithms
+        window.testAllAlgorithms = async function testAllAlgorithms() {
+            if (!wasmLoaded) {
+                alert('WASM module not loaded yet! Please select a module and click "Load Module".');
+                return;
+            }
+
+            const output = document.getElementById('output');
+            output.textContent = 'Bitcoin PQC Library Example\n';
+            output.textContent += '==========================\n\n';
+            output.textContent += 'This example tests the post-quantum signature algorithms designed for BIP-360 and the Bitcoin QuBit soft fork.\n';
+            output.textContent += `Using ${moduleType === 'lowlevel' ? 'Low-Level API' : 'High-Level API'}\n\n`;
+
+            await testAlgorithm(1, 'ML-DSA-44');
+            await testAlgorithm(2, 'SLH-DSA-Shake-128s');
+        }
+    </script>
+</body>
+
+</html>

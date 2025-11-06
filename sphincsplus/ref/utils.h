@@ -1,20 +1,40 @@
 #ifndef SPX_UTILS_H
 #define SPX_UTILS_H
 
-#include <stdint.h>
-#include "params.h"
 #include "context.h"
-
+#include "params.h"
+#include <stdint.h>
 
 /* To support MSVC use alloca() instead of VLAs. See #20. */
-#ifdef _MSC_VER
+#ifdef __EMSCRIPTEN__
+/* For WASM/Emscripten, use heap allocation instead of stack VLAs
+   to avoid stack overflow issues. SPHINCS+ uses large VLAs that can
+   cause stack overflow in WASM (e.g., tree_height=9 means ~1KB arrays).
+   For shake-128s: SPX_TREE_HEIGHT = 9, so stack arrays are ~1KB each.
+
+   Note: malloc failures should be rare, but if they occur, abort() will
+   cause an "unreachable" trap in WASM. This is expected behavior for
+   out-of-memory conditions. */
+#include <stdlib.h>
+#define SPX_VLA(__t, __x, __s)                                                 \
+  __t *__x = (__t *)malloc((__s) * sizeof(__t));                               \
+  if (!__x)                                                                    \
+  abort()
+#define SPX_VLA_FREE(__x)                                                      \
+  do {                                                                         \
+    if (__x)                                                                   \
+      free(__x);                                                               \
+  } while (0)
+#elif defined(_MSC_VER)
 /* MSVC defines _alloca in malloc.h */
-# include <malloc.h>
+#include <malloc.h>
 /* Note: _malloca(), which is recommended over deprecated _alloca,
-   requires that you call _freea(). So we stick with _alloca */ 
-# define SPX_VLA(__t,__x,__s) __t *__x = (__t*)_alloca((__s)*sizeof(__t))
+   requires that you call _freea(). So we stick with _alloca */
+#define SPX_VLA(__t, __x, __s) __t *__x = (__t *)_alloca((__s) * sizeof(__t))
+#define SPX_VLA_FREE(__x) ((void)0) /* No-op for _alloca */
 #else
-# define SPX_VLA(__t,__x,__s) __t __x[__s]
+#define SPX_VLA(__t, __x, __s) __t __x[__s]
+#define SPX_VLA_FREE(__x) ((void)0) /* No-op for VLAs */
 #endif
 
 /**
@@ -51,14 +71,12 @@ void compute_root(unsigned char *root, const unsigned char *leaf,
  * it is possible to continue counting indices across trees.
  */
 #define treehash SPX_NAMESPACE(treehash)
-void treehash(unsigned char *root, unsigned char *auth_path,
-              const spx_ctx* ctx,
+void treehash(unsigned char *root, unsigned char *auth_path, const spx_ctx *ctx,
               uint32_t leaf_idx, uint32_t idx_offset, uint32_t tree_height,
-              void (*gen_leaf)(
-                 unsigned char* /* leaf */,
-                 const spx_ctx* ctx /* ctx */,
-                 uint32_t /* addr_idx */, const uint32_t[8] /* tree_addr */),
+              void (*gen_leaf)(unsigned char * /* leaf */,
+                               const spx_ctx *ctx /* ctx */,
+                               uint32_t /* addr_idx */,
+                               const uint32_t[8] /* tree_addr */),
               uint32_t tree_addr[8]);
-
 
 #endif

@@ -1,0 +1,31 @@
+# Source files
+src/
+*.ts
+!dist/**/*.d.ts
+
+# Build scripts
+build.sh
+*.sh
+
+# Test files
+test-node.js
+index.html
+*.log
+
+# Development files
+.git/
+.gitignore
+*.md
+!README.md
+
+# WASM source files (published files are in dist/)
+bitcoinpqc.js
+bitcoinpqc.wasm
+randombytes_unified.h
+randombytes_wrapper.c
+
+# Temporary files
+*.tmp
+*.temp
+.DS_Store
+

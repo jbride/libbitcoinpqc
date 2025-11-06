@@ -1,0 +1,58 @@
+{
+    "name": "@jbride/bitcoinpqc-wasm",
+    "version": "0.1.0",
+    "description": "WebAssembly build of Bitcoin PQC library for browser and Node.js",
+    "main": "dist/index.js",
+    "types": "dist/index.d.ts",
+    "browser": {
+        "crypto": false
+    },
+    "scripts": {
+        "build": "npm run build:wasm && npm run build:ts",
+        "build:wasm": "./bin/wasm_build.sh",
+        "build:ts": "tsc -p .",
+        "test": "npm run test:high-level && npm run test:low-level",
+        "test:high-level": "node test/test-npm-package.js",
+        "test:low-level": "node test/test-raw-wasm.js",
+        "prepublishOnly": "npm run build"
+    },
+    "keywords": [
+        "bitcoin",
+        "cryptocurrency",
+        "post-quantum",
+        "cryptography",
+        "signature",
+        "dilithium",
+        "sphincs+",
+        "wasm",
+        "webassembly",
+        "browser"
+    ],
+    "author": "Hunter Beast <hunter@surmount.systems>",
+    "license": "MIT",
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/bitcoin/libbitcoinpqc.git",
+        "directory": "wasm"
+    },
+    "bugs": {
+        "url": "https://github.com/bitcoin/libbitcoinpqc/issues"
+    },
+    "homepage": "https://github.com/bitcoin/libbitcoinpqc#readme",
+    "files": [
+        "dist",
+        "README.md",
+        "package.json",
+        "LICENSE"
+    ],
+    "publishConfig": {
+        "access": "public"
+    },
+    "engines": {
+        "node": ">=14.0.0"
+    },
+    "devDependencies": {
+        "typescript": "^5.4.2",
+        "@types/node": "^20.11.30"
+    }
+}
