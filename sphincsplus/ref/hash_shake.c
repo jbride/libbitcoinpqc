@@ -37,7 +37,8 @@ void gen_message_random(unsigned char *R, const unsigned char *sk_prf,
   (void)ctx;
 #ifdef __EMSCRIPTEN__
   /* For WASM, use heap allocation to avoid stack overflow */
-  uint64_t *s_inc = (uint64_t *)malloc(26 * sizeof(uint64_t));
+  /* Using calloc() for zero-initialization in WASM sandboxed environment */
+  uint64_t *s_inc = (uint64_t *)calloc(26, sizeof(uint64_t));
   if (!s_inc) {
     abort();
   }
@@ -52,7 +53,10 @@ void gen_message_random(unsigned char *R, const unsigned char *sk_prf,
   shake256_inc_finalize(s_inc);
   shake256_inc_squeeze(R, SPX_N, s_inc);
 #ifdef __EMSCRIPTEN__
-  free(s_inc);
+  if (s_inc) {
+    memset(s_inc, 0, 26 * sizeof(uint64_t));
+    free(s_inc);
+  }
 #endif
 }
 
@@ -74,8 +78,9 @@ void hash_message(unsigned char *digest, uint64_t *tree, uint32_t *leaf_idx,
 
 #ifdef __EMSCRIPTEN__
   /* For WASM, use heap allocation to avoid stack overflow */
-  unsigned char *buf = (unsigned char *)malloc(SPX_DGST_BYTES);
-  uint64_t *s_inc = (uint64_t *)malloc(26 * sizeof(uint64_t));
+  /* Using calloc() for zero-initialization in WASM sandboxed environment */
+  unsigned char *buf = (unsigned char *)calloc(SPX_DGST_BYTES, 1);
+  uint64_t *s_inc = (uint64_t *)calloc(26, sizeof(uint64_t));
   if (!buf || !s_inc) {
     abort();
   }
@@ -111,7 +116,13 @@ void hash_message(unsigned char *digest, uint64_t *tree, uint32_t *leaf_idx,
   *leaf_idx &= (~(uint32_t)0) >> (32 - SPX_LEAF_BITS);
 
 #ifdef __EMSCRIPTEN__
-  free(s_inc);
-  free(buf);
+  if (s_inc) {
+    memset(s_inc, 0, 26 * sizeof(uint64_t));
+    free(s_inc);
+  }
+  if (buf) {
+    memset(buf, 0, SPX_DGST_BYTES);
+    free(buf);
+  }
 #endif
 }

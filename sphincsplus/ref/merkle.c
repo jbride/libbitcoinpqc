@@ -26,7 +26,8 @@ void merkle_sign(uint8_t *sig, unsigned char *root, const spx_ctx *ctx,
   struct leaf_info_x1 info = {0};
 #ifdef __EMSCRIPTEN__
   /* For WASM, use heap allocation to avoid stack overflow */
-  unsigned *steps = (unsigned *)malloc(SPX_WOTS_LEN * sizeof(unsigned));
+  /* Using calloc() for zero-initialization in WASM sandboxed environment */
+  unsigned *steps = (unsigned *)calloc(SPX_WOTS_LEN, sizeof(unsigned));
   if (!steps) {
     abort();
   }
@@ -49,7 +50,10 @@ void merkle_sign(uint8_t *sig, unsigned char *root, const spx_ctx *ctx,
              wots_gen_leafx1, tree_addr, &info);
 
 #ifdef __EMSCRIPTEN__
-  free(steps);
+  if (steps) {
+    memset(steps, 0, SPX_WOTS_LEN * sizeof(unsigned));
+    free(steps);
+  }
 #endif
 }
 

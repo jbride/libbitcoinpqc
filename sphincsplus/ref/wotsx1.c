@@ -26,7 +26,8 @@ void wots_gen_leafx1(unsigned char *dest, const spx_ctx *ctx, uint32_t leaf_idx,
   unsigned int i, k;
 #ifdef __EMSCRIPTEN__
   /* For WASM, use heap allocation to avoid stack overflow */
-  unsigned char *pk_buffer = (unsigned char *)malloc(SPX_WOTS_BYTES);
+  /* Using calloc() for zero-initialization in WASM sandboxed environment */
+  unsigned char *pk_buffer = (unsigned char *)calloc(SPX_WOTS_BYTES, 1);
   if (!pk_buffer) {
     abort();
   }
@@ -84,6 +85,9 @@ void wots_gen_leafx1(unsigned char *dest, const spx_ctx *ctx, uint32_t leaf_idx,
   thash(dest, pk_buffer, SPX_WOTS_LEN, ctx, pk_addr);
 
 #ifdef __EMSCRIPTEN__
-  free(pk_buffer);
+  if (pk_buffer) {
+    memset(pk_buffer, 0, SPX_WOTS_BYTES);
+    free(pk_buffer);
+  }
 #endif
 }

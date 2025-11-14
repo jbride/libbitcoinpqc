@@ -4,6 +4,7 @@
 #include "context.h"
 #include "params.h"
 #include <stdint.h>
+#include <string.h>
 
 /* To support MSVC use alloca() instead of VLAs. See #20. */
 #ifdef __EMSCRIPTEN__
@@ -12,18 +13,23 @@
    cause stack overflow in WASM (e.g., tree_height=9 means ~1KB arrays).
    For shake-128s: SPX_TREE_HEIGHT = 9, so stack arrays are ~1KB each.
 
-   Note: malloc failures should be rare, but if they occur, abort() will
-   cause an "unreachable" trap in WASM. This is expected behavior for
-   out-of-memory conditions. */
+   Note: calloc() is used instead of malloc() for zero-initialization,
+   which provides defense-in-depth against uninitialized memory bugs
+   in the WASM sandboxed environment. Allocation failures are rare, but
+   if they occur, abort() will cause an "unreachable" trap in WASM.
+   This is expected behavior for out-of-memory conditions. */
 #include <stdlib.h>
 #define SPX_VLA(__t, __x, __s)                                                 \
-  __t *__x = (__t *)malloc((__s) * sizeof(__t));                               \
+  size_t __x##_bytes = (__s) * sizeof(__t);                                    \
+  __t *__x = (__t *)calloc((__s), sizeof(__t));                                \
   if (!__x)                                                                    \
   abort()
 #define SPX_VLA_FREE(__x)                                                      \
   do {                                                                         \
-    if (__x)                                                                   \
+    if (__x) {                                                                 \
+      memset(__x, 0, __x##_bytes);                                             \
       free(__x);                                                               \
+    }                                                                          \
   } while (0)
 #elif defined(_MSC_VER)
 /* MSVC defines _alloca in malloc.h */

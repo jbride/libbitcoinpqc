@@ -64,8 +64,9 @@ void fors_sign(unsigned char *sig, unsigned char *pk, const unsigned char *m,
                const spx_ctx *ctx, const uint32_t fors_addr[8]) {
 #ifdef __EMSCRIPTEN__
   /* For WASM, use heap allocation to avoid stack overflow */
-  uint32_t *indices = (uint32_t *)malloc(SPX_FORS_TREES * sizeof(uint32_t));
-  unsigned char *roots = (unsigned char *)malloc(SPX_FORS_TREES * SPX_N);
+  /* Using calloc() for zero-initialization in WASM sandboxed environment */
+  uint32_t *indices = (uint32_t *)calloc(SPX_FORS_TREES, sizeof(uint32_t));
+  unsigned char *roots = (unsigned char *)calloc(SPX_FORS_TREES * SPX_N, 1);
   if (!indices || !roots) {
     abort();
   }
@@ -111,8 +112,14 @@ void fors_sign(unsigned char *sig, unsigned char *pk, const unsigned char *m,
   thash(pk, roots, SPX_FORS_TREES, ctx, fors_pk_addr);
 
 #ifdef __EMSCRIPTEN__
-  free(roots);
-  free(indices);
+  if (roots) {
+    memset(roots, 0, SPX_FORS_TREES * SPX_N);
+    free(roots);
+  }
+  if (indices) {
+    memset(indices, 0, SPX_FORS_TREES * sizeof(uint32_t));
+    free(indices);
+  }
 #endif
 }
 
@@ -128,8 +135,9 @@ void fors_pk_from_sig(unsigned char *pk, const unsigned char *sig,
                       const uint32_t fors_addr[8]) {
 #ifdef __EMSCRIPTEN__
   /* For WASM, use heap allocation to avoid stack overflow */
-  uint32_t *indices = (uint32_t *)malloc(SPX_FORS_TREES * sizeof(uint32_t));
-  unsigned char *roots = (unsigned char *)malloc(SPX_FORS_TREES * SPX_N);
+  /* Using calloc() for zero-initialization in WASM sandboxed environment */
+  uint32_t *indices = (uint32_t *)calloc(SPX_FORS_TREES, sizeof(uint32_t));
+  unsigned char *roots = (unsigned char *)calloc(SPX_FORS_TREES * SPX_N, 1);
   if (!indices || !roots)
     abort();
 #else
@@ -170,7 +178,13 @@ void fors_pk_from_sig(unsigned char *pk, const unsigned char *sig,
   thash(pk, roots, SPX_FORS_TREES, ctx, fors_pk_addr);
 
 #ifdef __EMSCRIPTEN__
-  free(roots);
-  free(indices);
+  if (roots) {
+    memset(roots, 0, SPX_FORS_TREES * SPX_N);
+    free(roots);
+  }
+  if (indices) {
+    memset(indices, 0, SPX_FORS_TREES * sizeof(uint32_t));
+    free(indices);
+  }
 #endif
 }

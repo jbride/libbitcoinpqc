@@ -6,7 +6,7 @@ WASM runtimes differ significantly from traditional server-side (POSIX-like) env
 
 - **No native filesystem**: WASM sandboxing blocks `/dev/urandom` and standard file APIs. Randomness must come from host-provided callbacks such as `crypto.getRandomValues`, accessed through `EM_ASM` bridges.
 - **Tight stack limits**: Typical browser/runtime stacks are only a few hundred kilobytes; large automatic arrays (VLAs) overflow quickly. SPHINCS+ uses Variable Length Arrays (VLAs) extensively, which cause stack overflow in WASM due to limited stack size.  The updates move these allocations to the heap and add matching frees.
-- **Host-managed memory**: All memory ultimately lives in a single linear buffer. Manual `malloc`/`free` coordination is critical to avoid leaks across JS ↔ C boundaries.
+- **Host-managed memory**: All memory ultimately lives in a single linear buffer. Manual `calloc`/`free` coordination is critical to avoid leaks across JS ↔ C boundaries.
 - **Single-threaded execution**: Main-thread WASM code runs without POSIX threads or signals, so synchronous error handling paths (e.g., `printf` debugging, blocking calls) need to be minimal and optional.
 - **Foreign-function boundary**: Every call to C from JS (and vice versa) has a cost; the wrapper now exposes a higher-level, type-safe API while allowing low-level access for advanced use.
 
@@ -52,7 +52,7 @@ WASM has a limited stack size (default 1MB, configurable up to ~10MB). SPHINCS+ 
 
 In addition, all functions using `SPX_VLA` must call `SPX_VLA_FREE` before returning in WASM builds.
 
-- **`sphincsplus/ref/utils.h`**: Modified `SPX_VLA` macro to use `malloc` for WASM
+- **`sphincsplus/ref/utils.h`**: Modified `SPX_VLA` macro to use `calloc` for WASM
   - **Critical**: WASM stack is limited; VLAs cause stack overflow
 
 - **`sphincsplus/ref/utils.c`**: Added `SPX_VLA_FREE` calls
@@ -60,6 +60,8 @@ In addition, all functions using `SPX_VLA` must call `SPX_VLA_FREE` before retur
 
 - **`sphincsplus/ref/utilsx1.c`**: Added `SPX_VLA_FREE` calls and heap allocation
   - **Critical**: Memory management for WASM
+
+- **Zeroed heap allocations**: All WASM-specific heap allocations now use `calloc()` instead of `malloc()` to ensure buffers start zeroed. This prevents accidental reads of uninitialized data when buffers cross the JS ↔ C boundary and adds defense in depth with negligible performance cost at the small allocation sizes used here.
 
 ### 2.4. Heap Allocation Changes (Stack Overflow Prevention)
 
@@ -103,4 +105,28 @@ These changes don't affect functionality but improve code style:
 **Recommendation**: You can revert these if you prefer the original style, but they don't affect functionality.
 
 ---
+
+## 4. `calloc` Behavior: Browser WASM vs. Native Builds
+
+There are no semantic differences in how `calloc()` behaves between a browser-hosted WASM build and a native server build: both allocate zeroed memory and return `NULL` on failure. The practical considerations differ slightly:
+
+- **Memory source**: Browsers carve allocations from the module’s linear memory (a growable buffer supplied by JS/Emscripten). Native builds allocate from the OS heap. Either way, the caller observes zeroed bytes.
+- **Zero cost expectation**: Newly grown WASM pages arrive zeroed, so `calloc()` often needs to touch only previously used portions. On native builds the allocator may need to explicitly zero each page, but the effect is identical.
+- **Failure semantics**: Both return `NULL`. In WASM an abort turns into an “unreachable” trap, whereas servers surface a normal allocation failure.
+- **Security implications**: Zero-initializing buffers prevents leaking stale data to cryptographic code and reduces side-channel risk when buffers cross language boundaries (e.g., JS↔C). The benefit is heightened in WASM because many buffers traverse glue code where uninitialized usage is harder to spot.
+
+Bottom line: using `calloc()` in WASM buys the same safety properties as on servers, with negligible extra cost at the sizes we allocate.
+
+---
+
+## 5. Zeroing Buffers Before Freeing (WASM-specific)
+
+All buffers allocated under `__EMSCRIPTEN__` are now scrubbed (memset to zero) before `free()` or `SPX_VLA_FREE()` is called. This adds several benefits specific to the WASM environment:
+
+- **Secret hygiene**: Intermediate seeds, message hashes, and key material frequently reside in these buffers. Zeroing them closes the window for accidental reuse or disclosure inside the shared linear memory.
+- **Linear-memory reuse**: The WASM heap is a single growable array reused for future allocations. Clearing data before returning it to the allocator prevents one module component from inheriting another’s sensitive bytes.
+- **JS ↔ C boundary safety**: Buffers often cross into JavaScript views; zeroing ensures that stale contents are not exposed if a TypedArray is read after the C side releases it.
+- **Low cost**: Buffer sizes are small (kilobytes), so scrubbing has negligible impact compared to the surrounding hashing/signing work.
+
+Recommendation: keep the zero-on-free pattern for any future WASM-only allocations to maintain consistent data sanitization guarantees.
 
