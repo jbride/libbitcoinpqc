@@ -177,8 +177,9 @@ This test demonstrates:
 
 ### 5.4. Browser Testing
 
-Open `index.html` in a browser for interactive browser testing or
-Alternatively,  render index.html in a webserver:   (cd wasm; python3 -m http.server 8000)
+Render index.html in a webserver:
+
+> cd wasm; python3 -m http.server 8000
 
 
 The page allows you to:

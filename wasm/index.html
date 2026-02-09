@@ -191,6 +191,25 @@
     </div>
 
     <script>
+        // Detect file:// protocol — browsers block loading .wasm files via CORS
+        if (window.location.protocol === 'file:') {
+            document.getElementById('status').className = 'status error';
+            document.getElementById('status').innerHTML =
+                '<strong>⚠ Cannot load WebAssembly from file:// protocol</strong><br><br>' +
+                'Browsers block loading .wasm files from local file:// URLs due to CORS security policy.<br><br>' +
+                '<strong>Solutions:</strong><br>' +
+                '1. Use a local HTTP server (recommended):<br>' +
+                '&nbsp;&nbsp;&nbsp;<code>python3 -m http.server 8000</code><br>' +
+                '&nbsp;&nbsp;&nbsp;Then open <a href="http://localhost:8000">http://localhost:8000</a><br><br>' +
+                '2. Use Node.js:<br>' +
+                '&nbsp;&nbsp;&nbsp;<code>npx serve .</code><br><br>' +
+                '3. Chrome only — launch with:<br>' +
+                '&nbsp;&nbsp;&nbsp;<code>google-chrome --allow-file-access-from-files</code>';
+            document.getElementById('loadModule').disabled = true;
+            document.getElementById('output').textContent =
+                'WebAssembly cannot be loaded from file:// URLs.\nPlease use a local HTTP server.';
+        }
+
         let wasmLoaded = false;
         let moduleType = 'lowlevel'; // 'lowlevel' or 'highlevel'
         let highLevelModule = null; // For high-level API
